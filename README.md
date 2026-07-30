@@ -55,10 +55,11 @@ the installer against your code-signing cert (newest in `Cert:\CurrentUser\My`, 
 pass `-CertThumbprint`).
 
 ```powershell
-.\build.ps1 -Sign            # windowed GUI exe (IPProvisioner.exe) for the shortcut
-.\build.ps1 -Console -Sign   # console CLI exe (IPProvisioner-cli.exe) for live output
+.\build.ps1 -Sign            # builds the single dual-mode IPProvisioner.exe and signs it + the installer
 ```
-Drop an `IPProvisioner.ico` next to `build.ps1` to brand the exe; it builds without one otherwise.
+One windowed exe serves both roles: the GUI never flashes a console, and in CLI mode it
+attaches to the launching console (`AttachConsole`) so `-List`/`-Cli` output appears in your
+shell. Drop an `IPProvisioner.ico` next to `build.ps1` to brand the exe.
 The GUI exe still accepts the CLI switches, but being windowed it has no console to
 print to — its status goes to the log. Build the `-Console` variant when you want
 live command-line output.

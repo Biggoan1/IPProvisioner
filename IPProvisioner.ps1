@@ -41,6 +41,14 @@ function Write-Log($m) {
     try { Add-Content -Path (Join-Path $script:LogDir 'ipprovisioner.log') -Encoding UTF8 -Value ("{0} [pid {1}] [{2}] {3}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'), $PID, (whoami), $m) } catch { }
 }
 
+# One exe serves both roles. Compiled windowed (no console subsystem) the GUI never
+# flashes a console; in CLI mode we attach to the launching console so Write-Host
+# output lands in the user's cmd/powershell window.
+function Use-ParentConsole {
+    try { Add-Type -Name Con -Namespace Fafo -MemberDefinition '[System.Runtime.InteropServices.DllImport("kernel32.dll")] public static extern bool AttachConsole(int pid);' -ErrorAction SilentlyContinue } catch { }
+    try { [void][Fafo.Con]::AttachConsole(-1) } catch { }   # -1 = ATTACH_PARENT_PROCESS
+}
+
 # --- adapter discovery via .NET (no CIM, no privilege) -----------------------
 function Get-PhysAdapters {
     [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces() | Where-Object {
@@ -173,11 +181,13 @@ function New-EngineConfig([string]$name) {
 # streaming status to the console (and the log). -Headless additionally exits as
 # soon as the address is assigned; -Cli runs for -Seconds (0 = until Ctrl+C).
 if ($List) {
+    Use-ParentConsole
     Write-Host 'Selectable adapters:'
     Get-PhysAdapters | ForEach-Object { Write-Host ("  {0}  [{1}]" -f $_.Name, $_.Description) }
     return
 }
 if ($Cli -or $Headless) {
+    Use-ParentConsole
     if (-not $Nic) {
         Write-Host 'Specify -Nic "<adapter name>". Available adapters:'
         Get-PhysAdapters | ForEach-Object { Write-Host ("  {0}" -f $_.Name) }
