@@ -54,7 +54,10 @@ function Get-PhysAdapters {
     [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces() | Where-Object {
         $_.NetworkInterfaceType -ne [System.Net.NetworkInformation.NetworkInterfaceType]::Loopback -and
         $_.NetworkInterfaceType -ne [System.Net.NetworkInformation.NetworkInterfaceType]::Tunnel -and
-        $_.Description -notmatch 'vEthernet|Hyper-V|Virtual |VMware|VirtualBox|TAP-Windows|Loopback|Bluetooth'
+        $_.NetworkInterfaceType -ne [System.Net.NetworkInformation.NetworkInterfaceType]::Wireless80211 -and   # exclude Wi-Fi
+        $_.NetworkInterfaceType -ne [System.Net.NetworkInformation.NetworkInterfaceType]::Wwanpp -and          # exclude cellular
+        $_.NetworkInterfaceType -ne [System.Net.NetworkInformation.NetworkInterfaceType]::Wwanpp2 -and
+        $_.Description -notmatch 'vEthernet|Hyper-V|Virtual |VMware|VirtualBox|TAP-Windows|Loopback|Bluetooth|Wi-?Fi|Wireless|WWAN|Cellular|Mobile Broadband'
     } | Sort-Object Name
 }
 function Get-AdapterInfo([string]$name) {
