@@ -60,9 +60,6 @@ pass `-CertThumbprint`).
 One windowed exe serves both roles: the GUI never flashes a console, and in CLI mode it
 attaches to the launching console (`AttachConsole`) so `-List`/`-Cli` output appears in your
 shell. Drop an `IPProvisioner.ico` next to `build.ps1` to brand the exe.
-The GUI exe still accepts the CLI switches, but being windowed it has no console to
-print to — its status goes to the log. Build the `-Console` variant when you want
-live command-line output.
 
 ## Install
 
