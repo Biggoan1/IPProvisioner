@@ -1,0 +1,202 @@
+IP Provisioner 1.0.2 - Packaging Notes
+======================================
+
+Source
+------
+In-house FAFO Lab tool. No vendor, no upstream URL, no winget/store ID.
+Binaries were handed to PackageFoundry pre-built and pre-signed, staged at
+C:\Distrib\PackageFoundry\incoming\IPProvisioner on 2026-07-29 and copied verbatim
+into this source folder (no repacking, no re-signing, no edits).
+
+Both files are Authenticode signed by a fafolab-CA-issued code-signing certificate
+(subject CN=Administrator, CN=Users, DC=fafolab, DC=net), which is trusted domain-wide.
+Signature status verified Valid after the copy into D:\Sources.
+
+Not checked against the Patch My PC catalog: this is a first-party in-house tool, so
+the usual "is it a PMPC app?" gate does not apply.
+
+
+What this is
+------------
+A small IP provisioning utility. Since 1.0.1 it is a SINGLE dual-mode executable:
+
+  IPProvisioner.exe   -  GUI and CLI in one binary, FileVersion / ProductVersion 1.0.2.0
+
+Per the installer's own header comment, the app runs UNPRIVILEGED at runtime: it needs
+no NCO (Network Configuration Operators) membership and no "Log on as a batch job"
+right. The only privileged work is the one-time install (creating the Program Files
+folder, the ProgramData data folder, the all-users shortcuts and the ARP key) - which is
+why the deployment type runs as system.
+
+
+What changed from 1.0.1
+-----------------------
+1. Functional (inside the exe, no packaging impact): the adapter picker now excludes
+   Wi-Fi and cellular NICs, so the tool only offers wired adapters. This is the whole
+   point of the build.
+2. IPProvisioner.exe is 1.0.2.0 (81104 bytes; 1.0.1 was 80592).
+3. IPProvisioner-Install.ps1 is byte-identical to the 1.0.1 copy EXCEPT for its
+   Authenticode signature block - it was re-signed alongside the new exe. Verified by
+   diffing the two files: the only differing lines are inside
+   "# SIG # Begin signature block". So none of the install behaviour below changed.
+4. Detection constant bumped 1.0.1.0 -> 1.0.2.0. Same clause type, same path, same file,
+   same operator.
+
+Everything else - install/uninstall commands, install context, logon requirement, user
+experience, run times, exit codes, content layout, icon - is unchanged.
+
+LAPITOPI was added to the "IP Provisioner - Test" collection (it now holds W104 and
+LAPITOPI). It is a laptop, which makes it the intended test target for the Wi-Fi filter:
+it is the machine in the ring that actually has a wireless adapter to exclude. The
+collection membership change was made outside this packaging step; this package did not
+alter the collection.
+
+
+How it installs
+---------------
+Deployment type is a Script installer running IPProvisioner-Install.ps1, a single
+combined install/uninstall script driven by a mandatory -Action parameter
+(Install|Uninstall) - the house combined-script pattern.
+
+  Install:
+    1. Creates C:\Program Files\IPProvisioner\
+    2. Looks next to itself ($PSScriptRoot) for IPProvisioner.exe and copies it into the
+       install folder. (It falls back to copying an IPProvisioner.ps1 and building a
+       powershell.exe-based shortcut if no compiled exe is present - not the case here,
+       the exe ships, so the exe branch always wins.)
+    3. Copies IPProvisioner-Install.ps1 itself into the install folder, for the ARP
+       UninstallString to call.
+    4. Creates C:\ProgramData\IPProvisioner\Logs\ and grants BUILTIN\Users (SID
+       S-1-5-32-545) Modify via icacls, because the app logs there while running
+       unprivileged.
+    5. Creates two shortcuts named "IP Provisioner.lnk" - one on the Public Desktop, one
+       in the all-users Start Menu - both pointing at the installed exe, icon taken from
+       the exe itself.
+    6. Reads the installed exe's FileVersion and writes the ARP key using it as
+       DisplayVersion. If that read throws, it falls back to the literal string '1.0.0.0'
+       - which matters for detection, see below.
+    7. Verifies the payload landed in the install folder and throws if not.
+
+  Uninstall:
+    Removes the ARP key, both shortcuts, and recursively deletes
+    C:\Program Files\IPProvisioner\. C:\ProgramData\IPProvisioner\ (data + logs) is
+    deliberately LEFT BEHIND for audit; remove it by hand if a truly clean removal is
+    wanted.
+
+Install context is system / whether-or-not-a-user-is-logged-on / hidden. That is correct
+for this package even though the shortcuts are all-users: everything the installer touches
+is machine-wide (Program Files, ProgramData, Public Desktop, all-users Start Menu, HKLM),
+so there is no per-user state to get written into SYSTEM's profile by mistake.
+
+VBScript note: the installer creates its shortcuts through the WScript.Shell COM object,
+not a .vbs file. That is fine on Windows 25H2 - 25H2 removes the VBScript language engine
+but wshom.ocx / the COM object still works from PowerShell.
+
+
+Files in this package
+---------------------
+Content\IPProvisioner.exe            The dual-mode GUI/CLI binary, FileVersion 1.0.2.0.
+                                     The payload the installer deploys.
+Content\IPProvisioner-Install.ps1    Combined installer/uninstaller, -Action Install|Uninstall.
+                                     Signed; do not edit in place.
+Icons\IPProvisioner.png              32x32 PNG carried forward from the 1.0.0 package,
+                                     applied to the application so it renders in Software
+                                     Center. NOT in content.
+SCCM_Commands.txt                    Mechanical DT settings + the detection clause + full
+                                     copy-paste rebuild block for another site. NOT in content.
+PACKAGING_NOTES.txt                  This file. NOT in content.
+
+The deployment type's ContentLocation is the Content\ SUBFOLDER, not the source root, so
+the deployment type content contains exactly the two files above and nothing else. The
+install command still names IPProvisioner-Install.ps1 with no path prefix - correct,
+because the command's working directory is the content folder itself.
+
+
+Detection
+---------
+Native File System detection clause (not a script):
+
+    Path      : C:\Program Files\IPProvisioner
+    File      : IPProvisioner.exe
+    Property  : Version   GreaterEquals   1.0.2.0
+    Is64Bit   : true
+
+One clause covers "exists AND version >= 1.0.2.0" - a version comparison cannot succeed
+against a file that is not there, so a missing exe evaluates as not-installed.
+
+Why not the registry DisplayVersion rule (unchanged reasoning from 1.0.1): the installer
+does write an ARP DisplayVersion, so the house-standard registry -ge pattern is available.
+It is not used because that value is a DERIVED copy of the exe's FileVersion, read back at
+install time, with a hard-coded '1.0.0.0' fallback if the read throws (installer step 6
+above). Two ways it can lie that the binary cannot:
+  - if the version read fails, ARP says 1.0.0.0 while a 1.0.2 exe is installed, so
+    detection would report not-installed forever and the app would reinstall every cycle;
+  - if someone deletes C:\Program Files\IPProvisioner by hand, the ARP key survives and
+    registry detection would report the app as still installed.
+The exe's own FileVersion is the source that value is copied FROM, so it is strictly the
+more reliable of the two, and it needs no script execution on the client.
+
+The house note feedback_sccm_detection_scripts.md prefers registry over file checks, and
+that still holds for MSI packages where Windows Installer owns the ARP key - there the
+registry is authoritative. Here the ARP key is written by our own script from the file, so
+the preference inverts. What that house note is really warning against is bare file
+EXISTENCE checks, which is not what this clause does.
+
+How the clause was replaced: the 1.0.2.0 clause was ADDED first and the 1.0.1.0 clause
+REMOVED second, so the deployment type was never left with zero detection clauses. For one
+intermediate revision both clauses were ANDed, which is harmless (>= 1.0.2.0 implies
+>= 1.0.1.0). Set-CMScriptDeploymentType -RemoveDetectionClause takes the clause's setting
+LOGICAL NAME (File_<guid>), which is only readable out of the DT's SDMPackageXML - the
+lookup snippet is in SCCM_Commands.txt.
+
+Expected consequence on W104 and LAPITOPI (both currently on 1.0.1, if installed): their
+next evaluation reports the app as NOT installed, because 1.0.1.0 is not >= 1.0.2.0. That
+is intended - it is what makes the upgrade available in Software Center. The install is an
+in-place file overwrite; no uninstall of 1.0.1 is needed first.
+
+
+Install logs
+------------
+C:\Distrib\Logs\IPProvisioner-Install.log
+    PowerShell transcript written by the installer, APPENDED (-Append) on every run, so
+    install and uninstall history accumulate in one file. Look for "Action=Install",
+    "ARP DisplayVersion = <ver>", "Install Complete", "Uninstall Complete", or
+    "FAILED: <message>".
+
+    Machines that ran the 1.0.0 installer still have an older transcript at
+    C:\ProgramData\IPProvisioner\Logs\IPProvisioner-Install.log and nothing cleans it up -
+    check both paths when investigating a long-lived client.
+
+C:\ProgramData\IPProvisioner\Logs\
+    App RUNTIME logs (written by the app itself, not the installer). Still used in 1.0.2.
+
+Client-side SCCM logs, as always:
+    C:\Windows\CCM\Logs\AppEnforce.log     - install/uninstall execution + exit code
+    C:\Windows\CCM\Logs\AppDiscovery.log   - detection results
+
+
+Upgrade notes
+-------------
+1.0.2 was applied as an IN-PLACE UPDATE to the existing "IP Provisioner" application
+(same CI_UniqueID, new revision) - not a second app. Consequences:
+
+  - No supersedence exists or is needed. Supersedence is for retiring a separate app
+    object; there is only one app here and it now describes 1.0.2.
+  - The existing Available deployment to "IP Provisioner - Test" (AssignmentID 16777286)
+    was left untouched. Deployments target the application, so it serves the current
+    revision automatically - confirmed by its AssignedCIs matching the post-update
+    application CI_ID.
+  - The old source folders D:\Sources\IP Provisioner 1.0.0\ and \1.0.1\ are no longer
+    referenced by anything in SCCM. They are retained for rollback. To roll back to 1.0.1:
+    point the DT's ContentLocation at D:\Sources\IP Provisioner 1.0.1\Content, swap the
+    detection clause's expected version back to 1.0.1.0, set SoftwareVersion to 1.0.1, and
+    redistribute.
+  - Clients already holding 1.0.1 upgrade by simply running the new install - it overwrites
+    the exe in place and rewrites the ARP DisplayVersion. Uninstalling 1.0.1 first is not
+    required.
+
+For 1.0.3+: keep updating this same app in place, stage a new versioned source folder with
+the same Content\ layout, and bump the detection clause's expected version to match the new
+build. Only three things change per release: SoftwareVersion, ContentLocation, and the
+detection constant (plus the DT name, cosmetically).
+
